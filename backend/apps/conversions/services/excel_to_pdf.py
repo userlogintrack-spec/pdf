@@ -29,7 +29,7 @@ def convert_excel_to_pdf(file_path):
             fitz.Point(margin, y_pos + header_font_size),
             sheet_name,
             fontsize=header_font_size,
-            fontname="helvB",
+            fontname="hebo",
         )
         y_pos += header_font_size * 2
 

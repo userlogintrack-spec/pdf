@@ -70,35 +70,29 @@ def compress_image(image_bytes, quality=70, max_width=None, max_height=None):
             w = int(w * ratio)
         img = img.resize((w, h), Image.LANCZOS)
 
-    # Convert for saving
+    output = io.BytesIO()
+
     if original_format in ('JPEG', 'JPG'):
         if img.mode != 'RGB':
             img = img.convert('RGB')
-        output = io.BytesIO()
         img.save(output, format='JPEG', quality=quality, optimize=True)
         content_type = 'image/jpeg'
         ext = 'jpg'
     elif original_format == 'WEBP':
-        output = io.BytesIO()
         img.save(output, format='WEBP', quality=quality)
         content_type = 'image/webp'
         ext = 'webp'
     else:
-        # PNG: use optimize
-        output = io.BytesIO()
-        if img.mode == 'RGBA':
-            img.save(output, format='PNG', optimize=True)
-        else:
-            img = img.convert('RGB')
-            img.save(output, format='JPEG', quality=quality, optimize=True)
-            content_type = 'image/jpeg'
-            ext = 'jpg'
-            output.seek(0)
-            return {
-                'data': output.getvalue(),
-                'content_type': content_type,
-                'extension': ext,
-            }
+        # PNG (and anything else): preserve PNG format with optimize + lower bit depth via quantization when possible
+        if img.mode == 'P':
+            img = img.convert('RGBA')
+        save_img = img
+        if img.mode in ('RGB', 'RGBA') and quality < 100:
+            try:
+                save_img = img.quantize(colors=max(32, min(256, int(256 * quality / 100))), dither=Image.Dither.FLOYDSTEINBERG)
+            except Exception:
+                save_img = img
+        save_img.save(output, format='PNG', optimize=True)
         content_type = 'image/png'
         ext = 'png'
 

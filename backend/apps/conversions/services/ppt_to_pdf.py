@@ -41,7 +41,7 @@ def convert_ppt_to_pdf(file_path):
                             font_size = run.font.size.pt
                         if run.font.bold:
                             is_bold = True
-                            font_name = "helvB"
+                            font_name = "hebo"
 
                     page.insert_text(
                         fitz.Point(left, y_offset + font_size),

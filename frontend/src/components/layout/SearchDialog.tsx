@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Search, X, XCircle,
+  Search, X,
   FileText, Merge, Scissors, RotateCw, ArrowDownUp, FileOutput,
-  Minimize2, Droplets, Lock, Unlock, ScanSearch,
+  Minimize2, Droplets, ScanSearch,
   FileType, FileSpreadsheet, Image, Presentation,
-  Code, Table, FileUp, ImageDown,
+  Table, FileUp, ImageDown,
 } from 'lucide-react';
 
 interface ToolItem {
@@ -27,8 +27,6 @@ const allTools: ToolItem[] = [
   { icon: <ArrowDownUp size={18} />, label: 'Reorder Pages', desc: 'Rearrange PDF pages', href: '/tools/reorder', category: 'PDF Tools', keywords: ['reorder', 'rearrange', 'sort', 'organize', 'pages'] },
   { icon: <FileOutput size={18} />, label: 'Extract Pages', desc: 'Extract specific pages from PDF', href: '/tools/extract', category: 'PDF Tools', keywords: ['extract', 'pages', 'select', 'pick'] },
   { icon: <Droplets size={18} />, label: 'Watermark', desc: 'Add text watermark to PDF', href: '/tools/watermark', category: 'PDF Tools', keywords: ['watermark', 'stamp', 'overlay', 'brand'] },
-  { icon: <Lock size={18} />, label: 'Protect PDF', desc: 'Add password protection', href: '/tools/protect', category: 'PDF Tools', keywords: ['protect', 'password', 'encrypt', 'lock', 'security'] },
-  { icon: <Unlock size={18} />, label: 'Unlock PDF', desc: 'Remove password from PDF', href: '/tools/unlock', category: 'PDF Tools', keywords: ['unlock', 'remove', 'password', 'decrypt'] },
   { icon: <ScanSearch size={18} />, label: 'OCR', desc: 'Recognize text in scanned PDFs', href: '/convert/ocr', category: 'PDF Tools', keywords: ['ocr', 'scan', 'recognize', 'text recognition', 'optical'] },
 
   // Convert from PDF
@@ -37,7 +35,6 @@ const allTools: ToolItem[] = [
   { icon: <Presentation size={18} />, label: 'PDF to PowerPoint', desc: 'Convert PDF to PPTX', href: '/convert/pdf-to-ppt', category: 'Convert from PDF', keywords: ['pdf', 'powerpoint', 'pptx', 'ppt', 'slides', 'presentation'] },
   { icon: <Image size={18} />, label: 'PDF to Image', desc: 'Convert PDF to PNG or JPEG', href: '/convert/pdf-to-image', category: 'Convert from PDF', keywords: ['pdf', 'image', 'png', 'jpeg', 'jpg', 'picture', 'photo'] },
   { icon: <FileText size={18} />, label: 'PDF to Text', desc: 'Extract text from PDF', href: '/convert/pdf-to-text', category: 'Convert from PDF', keywords: ['pdf', 'text', 'txt', 'extract', 'plain'] },
-  { icon: <Code size={18} />, label: 'PDF to HTML', desc: 'Convert PDF to webpage', href: '/convert/pdf-to-html', category: 'Convert from PDF', keywords: ['pdf', 'html', 'web', 'webpage'] },
   { icon: <Table size={18} />, label: 'PDF to CSV', desc: 'Extract tables to CSV', href: '/convert/pdf-to-csv', category: 'Convert from PDF', keywords: ['pdf', 'csv', 'table', 'data', 'comma'] },
 
   // Convert to PDF
@@ -45,13 +42,11 @@ const allTools: ToolItem[] = [
   { icon: <FileUp size={18} />, label: 'Excel to PDF', desc: 'Convert XLSX to PDF', href: '/convert/excel-to-pdf', category: 'Convert to PDF', keywords: ['excel', 'xlsx', 'pdf', 'spreadsheet'] },
   { icon: <FileUp size={18} />, label: 'PowerPoint to PDF', desc: 'Convert PPTX to PDF', href: '/convert/ppt-to-pdf', category: 'Convert to PDF', keywords: ['powerpoint', 'pptx', 'ppt', 'pdf', 'slides'] },
   { icon: <FileUp size={18} />, label: 'Image to PDF', desc: 'Convert images to PDF', href: '/convert/image-to-pdf', category: 'Convert to PDF', keywords: ['image', 'png', 'jpg', 'jpeg', 'pdf', 'photo'] },
-  { icon: <FileUp size={18} />, label: 'HTML to PDF', desc: 'Convert HTML to PDF', href: '/convert/html-to-pdf', category: 'Convert to PDF', keywords: ['html', 'web', 'pdf', 'webpage'] },
   { icon: <FileUp size={18} />, label: 'Text to PDF', desc: 'Convert TXT to PDF', href: '/convert/text-to-pdf', category: 'Convert to PDF', keywords: ['text', 'txt', 'pdf', 'plain'] },
   { icon: <FileUp size={18} />, label: 'CSV to PDF', desc: 'Convert CSV to PDF table', href: '/convert/csv-to-pdf', category: 'Convert to PDF', keywords: ['csv', 'pdf', 'table', 'data'] },
 
   // Word conversions
   { icon: <ImageDown size={18} />, label: 'Word to Image', desc: 'Convert DOCX to PNG/JPEG', href: '/convert/word-to-image', category: 'Word Tools', keywords: ['word', 'docx', 'image', 'png', 'jpeg', 'picture'] },
-  { icon: <Code size={18} />, label: 'Word to HTML', desc: 'Convert DOCX to HTML', href: '/convert/word-to-html', category: 'Word Tools', keywords: ['word', 'docx', 'html', 'webpage'] },
   { icon: <FileText size={18} />, label: 'Word to Text', desc: 'Extract text from Word', href: '/convert/word-to-text', category: 'Word Tools', keywords: ['word', 'docx', 'text', 'txt', 'extract'] },
 
   // Image tools

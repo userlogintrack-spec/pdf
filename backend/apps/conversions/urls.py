@@ -31,4 +31,8 @@ urlpatterns = [
 
     # OCR
     path('ocr/', views.OCRView.as_view(), name='ocr'),
+
+    # Download by token (used with preview flow)
+    path('download/<str:token>/', views.DownloadByTokenView.as_view(), name='download_by_token'),
+    path('preview/<str:token>/<int:page_num>/', views.PreviewPageView.as_view(), name='preview_page'),
 ]

@@ -1,9 +1,11 @@
 import { useState, useCallback } from 'react';
-import { RotateCw, Loader2 } from 'lucide-react';
+import { RotateCw, Loader2, Eye } from 'lucide-react';
 import { getThumbnailUrl } from '../../api/documents';
-import { rotatePDF } from '../../api/tools';
+import { requestPreview, downloadByToken } from '../../api/conversions';
+import type { GenericPreview } from '../../api/conversions';
 import FileUpload from '../common/FileUpload';
 import ToolLayout from './ToolLayout';
+import PreviewModal from '../common/PreviewModal';
 import type { DocumentInfo } from '../../types/api';
 
 export default function RotateTool() {
@@ -11,6 +13,7 @@ export default function RotateTool() {
   const [rotations, setRotations] = useState<Record<number, number>>({});
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<GenericPreview | null>(null);
 
   const handleUpload = useCallback(async (docId: string) => {
     const { getDocument } = await import('../../api/documents');
@@ -44,12 +47,21 @@ export default function RotateTool() {
     setProcessing(true);
     setError(null);
     try {
-      await rotatePDF(document.id, activeRotations);
+      const result = await requestPreview('/tools/rotate/', {
+        document_id: document.id,
+        pages: activeRotations,
+      });
+      setPreview(result);
     } catch {
       setError('Rotation failed. Please try again.');
     } finally {
       setProcessing(false);
     }
+  };
+
+  const handleDownload = async () => {
+    if (!preview) return;
+    await downloadByToken(preview.download_url, preview.filename);
   };
 
   return (
@@ -58,6 +70,15 @@ export default function RotateTool() {
       description="Rotate individual pages or all pages at once."
       icon={<RotateCw size={20} />}
     >
+      <PreviewModal
+        open={!!preview}
+        onClose={() => setPreview(null)}
+        onBackToOptions={() => setPreview(null)}
+        onDownload={handleDownload}
+        data={preview}
+        title="Preview rotated PDF"
+      />
+
       {!document ? (
         <FileUpload onUploadComplete={handleUpload} />
       ) : (
@@ -112,12 +133,12 @@ export default function RotateTool() {
           <button
             onClick={handleApply}
             disabled={processing || Object.values(rotations).every((v) => v === 0)}
-            className="w-full py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+            className="w-full py-3 bg-gradient-to-r from-brand-600 to-purple-600 text-white rounded-xl font-semibold hover:shadow-glow hover:-translate-y-0.5 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 transition-all"
           >
             {processing ? (
-              <><Loader2 size={18} className="animate-spin" /> Rotating...</>
+              <><Loader2 size={18} className="animate-spin" /> Generating preview…</>
             ) : (
-              <><RotateCw size={18} /> Apply Rotation</>
+              <><Eye size={18} /> <RotateCw size={18} /> Preview rotated PDF</>
             )}
           </button>
         </>

@@ -1,9 +1,11 @@
 import { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Merge, Upload, X, GripVertical, Loader2 } from 'lucide-react';
+import { Merge, Upload, X, GripVertical, Loader2, Eye } from 'lucide-react';
 import { uploadDocument } from '../../api/documents';
-import { mergePDFs } from '../../api/tools';
+import { requestPreview, downloadByToken } from '../../api/conversions';
+import type { GenericPreview } from '../../api/conversions';
 import ToolLayout from './ToolLayout';
+import PreviewModal from '../common/PreviewModal';
 
 interface UploadedFile {
   id: string;
@@ -18,6 +20,7 @@ export default function MergeTool() {
   const [merging, setMerging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [preview, setPreview] = useState<GenericPreview | null>(null);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     setUploading(true);
@@ -70,12 +73,20 @@ export default function MergeTool() {
     setMerging(true);
     setError(null);
     try {
-      await mergePDFs(files.map((f) => f.id));
+      const result = await requestPreview('/tools/merge/', {
+        document_ids: files.map((f) => f.id),
+      });
+      setPreview(result);
     } catch {
       setError('Merge failed. Please try again.');
     } finally {
       setMerging(false);
     }
+  };
+
+  const handleDownload = async () => {
+    if (!preview) return;
+    await downloadByToken(preview.download_url, preview.filename);
   };
 
   const formatSize = (bytes: number) => {
@@ -90,6 +101,15 @@ export default function MergeTool() {
       description="Combine multiple PDF files into one. Drag to reorder."
       icon={<Merge size={20} />}
     >
+      <PreviewModal
+        open={!!preview}
+        onClose={() => setPreview(null)}
+        onBackToOptions={() => setPreview(null)}
+        onDownload={handleDownload}
+        data={preview}
+        title="Preview merged PDF"
+      />
+
       {/* Upload Zone */}
       <div
         {...getRootProps()}
@@ -147,12 +167,12 @@ export default function MergeTool() {
       <button
         onClick={handleMerge}
         disabled={files.length < 2 || merging}
-        className="w-full py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
+        className="w-full py-3 bg-gradient-to-r from-brand-600 to-purple-600 text-white rounded-xl font-semibold hover:shadow-glow hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2 transition-all"
       >
         {merging ? (
-          <><Loader2 size={18} className="animate-spin" /> Merging...</>
+          <><Loader2 size={18} className="animate-spin" /> Merging…</>
         ) : (
-          <><Merge size={18} /> Merge {files.length} PDFs</>
+          <><Eye size={18} /> Preview merged PDF</>
         )}
       </button>
     </ToolLayout>

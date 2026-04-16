@@ -11,6 +11,45 @@ function triggerDownload(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+// ===== Generic preview envelope (returned by any endpoint with preview=true) =====
+
+export interface PreviewPageInfo {
+  index: number;
+  page_num: number;
+  thumbnail_url: string;
+  preview_url: string;
+}
+
+export interface GenericPreview {
+  token: string;
+  download_url: string;
+  filename: string;
+  file_size: number;
+  page_count: number;
+  expires_in: number;
+  preview_pages: PreviewPageInfo[];
+  [key: string]: unknown; // extra_meta fields (compressed_size, mode, etc.)
+}
+
+export async function requestPreview(
+  endpoint: string,
+  body: Record<string, unknown>,
+): Promise<GenericPreview> {
+  const response = await api.post<GenericPreview>(endpoint, { ...body, preview: true });
+  return response.data;
+}
+
+export async function requestPreviewMultipart(
+  endpoint: string,
+  formData: FormData,
+): Promise<GenericPreview> {
+  formData.append('preview', 'true');
+  const response = await api.post<GenericPreview>(endpoint, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+}
+
 // ===== PDF to other formats =====
 
 export async function pdfToWord(documentId: string, filename: string): Promise<void> {
@@ -44,6 +83,41 @@ export async function pdfToPpt(
   }, { responseType: 'blob' });
   const name = filename.replace(/\.pdf$/i, '.pptx');
   triggerDownload(response.data, name);
+}
+
+export interface PdfToPptPreview {
+  token: string;
+  download_url: string;
+  filename: string;
+  file_size: number;
+  slide_count: number;
+  mode: 'image' | 'editable' | 'hybrid';
+  dpi: number;
+  expires_in: number;
+  preview_pages: {
+    index: number;
+    page_num: number;
+    thumbnail_url: string;
+    preview_url: string;
+  }[];
+}
+
+export async function pdfToPptPreview(
+  documentId: string,
+  options?: { mode?: 'image' | 'editable' | 'hybrid'; dpi?: number }
+): Promise<PdfToPptPreview> {
+  const response = await api.post<PdfToPptPreview>('/convert/pdf-to-ppt/', {
+    document_id: documentId,
+    mode: options?.mode || 'image',
+    dpi: options?.dpi || 250,
+    preview: true,
+  });
+  return response.data;
+}
+
+export async function downloadByToken(downloadUrl: string, filename: string): Promise<void> {
+  const response = await api.get(downloadUrl.replace(/^\/api\/v1/, ''), { responseType: 'blob' });
+  triggerDownload(response.data, filename);
 }
 
 export async function pdfToText(documentId: string, filename: string): Promise<void> {

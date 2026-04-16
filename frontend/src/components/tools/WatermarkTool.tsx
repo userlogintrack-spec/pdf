@@ -1,8 +1,10 @@
 import { useState, useCallback } from 'react';
-import { Droplets, Loader2 } from 'lucide-react';
-import { addWatermark } from '../../api/tools';
+import { Droplets, Loader2, Eye } from 'lucide-react';
+import { requestPreview, downloadByToken } from '../../api/conversions';
+import type { GenericPreview } from '../../api/conversions';
 import FileUpload from '../common/FileUpload';
 import ToolLayout from './ToolLayout';
+import PreviewModal from '../common/PreviewModal';
 import type { DocumentInfo } from '../../types/api';
 
 export default function WatermarkTool() {
@@ -15,6 +17,7 @@ export default function WatermarkTool() {
   const [position, setPosition] = useState('center');
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<GenericPreview | null>(null);
 
   const handleUpload = useCallback(async (docId: string) => {
     const { getDocument } = await import('../../api/documents');
@@ -27,14 +30,26 @@ export default function WatermarkTool() {
     setProcessing(true);
     setError(null);
     try {
-      await addWatermark(document.id, {
-        text, font_size: fontSize, color, opacity, rotation, position,
+      const result = await requestPreview('/tools/watermark/', {
+        document_id: document.id,
+        text,
+        font_size: fontSize,
+        color,
+        opacity,
+        rotation,
+        position,
       });
+      setPreview(result);
     } catch {
       setError('Failed to add watermark. Please try again.');
     } finally {
       setProcessing(false);
     }
+  };
+
+  const handleDownload = async () => {
+    if (!preview) return;
+    await downloadByToken(preview.download_url, preview.filename);
   };
 
   const positions = [
@@ -52,6 +67,15 @@ export default function WatermarkTool() {
       description="Add a text watermark to your PDF pages."
       icon={<Droplets size={20} />}
     >
+      <PreviewModal
+        open={!!preview}
+        onClose={() => setPreview(null)}
+        onBackToOptions={() => setPreview(null)}
+        onDownload={handleDownload}
+        data={preview}
+        title="Preview watermarked PDF"
+      />
+
       {!document ? (
         <FileUpload onUploadComplete={handleUpload} />
       ) : (
@@ -174,12 +198,12 @@ export default function WatermarkTool() {
           <button
             onClick={handleApply}
             disabled={processing || !text.trim()}
-            className="w-full py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+            className="w-full py-3 bg-gradient-to-r from-brand-600 to-purple-600 text-white rounded-xl font-semibold hover:shadow-glow hover:-translate-y-0.5 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 transition-all"
           >
             {processing ? (
-              <><Loader2 size={18} className="animate-spin" /> Applying watermark...</>
+              <><Loader2 size={18} className="animate-spin" /> Generating preview…</>
             ) : (
-              <><Droplets size={18} /> Add Watermark</>
+              <><Eye size={18} /> <Droplets size={18} /> Preview watermarked PDF</>
             )}
           </button>
         </>

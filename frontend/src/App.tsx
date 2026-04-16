@@ -4,6 +4,13 @@ import HomePage from './pages/HomePage';
 import EditorPage from './pages/EditorPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import ComparePage from './pages/ComparePage';
+import FeaturesPage from './pages/FeaturesPage';
+import AboutPage from './pages/AboutPage';
+import PrivacyPage from './pages/PrivacyPage';
+import TermsPage from './pages/TermsPage';
+import ContactPage from './pages/ContactPage';
+import BlogPage from './pages/BlogPage';
 import MergeTool from './components/tools/MergeTool';
 import SplitTool from './components/tools/SplitTool';
 import RotateTool from './components/tools/RotateTool';
@@ -21,6 +28,13 @@ export default function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route path="/" element={<HomePage />} />
+          <Route path="/features" element={<FeaturesPage />} />
+          <Route path="/compare" element={<ComparePage />} />
+          <Route path="/about" element={<AboutPage />} />
+          <Route path="/blog" element={<BlogPage />} />
+          <Route path="/contact" element={<ContactPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/terms" element={<TermsPage />} />
           <Route path="/editor" element={<EditorPage />} />
           <Route path="/editor/:docId" element={<EditorPage />} />
           <Route path="/login" element={<LoginPage />} />

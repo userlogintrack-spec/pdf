@@ -51,13 +51,13 @@ def convert_word_to_pdf(file_path):
                 is_bold = True
 
         if is_bold:
-            font_name = "helvB"
+            font_name = "hebo"
 
         # Check if runs have specific formatting
         if para.runs:
             run = para.runs[0]
             if run.bold:
-                font_name = "helvB"
+                font_name = "hebo"
             if run.font.size:
                 font_size = run.font.size.pt
 

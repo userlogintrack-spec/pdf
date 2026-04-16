@@ -79,7 +79,7 @@ def _render_table_to_pdf(rows):
                 fitz.Point(x_pos + cell_padding, y_pos + row_height - cell_padding),
                 value,
                 fontsize=header_font_size if is_header else font_size,
-                fontname="helvB" if is_header else "helv",
+                fontname="hebo" if is_header else "helv",
             )
 
             x_pos += col_width

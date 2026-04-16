@@ -2,20 +2,46 @@ import { useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   FileType, FileSpreadsheet, Image, FileUp, Loader2,
-  Presentation, FileText, Code, Table,
-  ImageDown, Minimize2,
+  Presentation, FileText, Table,
+  ImageDown, Minimize2, Eye,
 } from 'lucide-react';
-import { uploadDocument } from '../../api/documents';
 import {
-  pdfToWord, pdfToExcel, pdfToImage, pdfToPpt, pdfToText, pdfToHtml, pdfToCsv,
-  wordToPdf, excelToPdf, imageToPdf, pptToPdf, htmlToPdf, textToPdf, csvToPdf,
-  wordToImage, wordToHtml, wordToText,
-  imageFormatConvert, imageCompress,
+  requestPreview, requestPreviewMultipart, downloadByToken,
 } from '../../api/conversions';
+import type { GenericPreview } from '../../api/conversions';
 import FileUpload from '../common/FileUpload';
 import ToolLayout from '../tools/ToolLayout';
+import PreviewModal from '../common/PreviewModal';
 import type { DocumentInfo } from '../../types/api';
 import { useDropzone } from 'react-dropzone';
+
+type ConvType =
+  | 'pdf-to-word' | 'pdf-to-excel' | 'pdf-to-image' | 'pdf-to-ppt'
+  | 'pdf-to-text' | 'pdf-to-csv'
+  | 'word-to-pdf' | 'excel-to-pdf' | 'image-to-pdf' | 'ppt-to-pdf'
+  | 'text-to-pdf' | 'csv-to-pdf'
+  | 'word-to-image' | 'word-to-text'
+  | 'image-format-convert' | 'image-compress';
+
+// Endpoint slug mapping for convType
+const endpointFor: Record<ConvType, string> = {
+  'pdf-to-word':   '/convert/pdf-to-word/',
+  'pdf-to-excel':  '/convert/pdf-to-excel/',
+  'pdf-to-image':  '/convert/pdf-to-image/',
+  'pdf-to-ppt':    '/convert/pdf-to-ppt/',
+  'pdf-to-text':   '/convert/pdf-to-text/',
+  'pdf-to-csv':    '/convert/pdf-to-csv/',
+  'word-to-pdf':   '/convert/word-to-pdf/',
+  'excel-to-pdf':  '/convert/excel-to-pdf/',
+  'image-to-pdf':  '/convert/image-to-pdf/',
+  'ppt-to-pdf':    '/convert/ppt-to-pdf/',
+  'text-to-pdf':   '/convert/text-to-pdf/',
+  'csv-to-pdf':    '/convert/csv-to-pdf/',
+  'word-to-image': '/convert/word-to-image/',
+  'word-to-text':  '/convert/word-to-text/',
+  'image-format-convert': '/convert/image-convert/',
+  'image-compress':       '/convert/image-compress/',
+};
 
 // Configuration for each conversion type
 const conversionConfig: Record<string, {
@@ -67,14 +93,6 @@ const conversionConfig: Record<string, {
     accept: { 'application/pdf': ['.pdf'] },
     acceptLabel: 'PDF',
   },
-  'pdf-to-html': {
-    title: 'PDF to HTML',
-    description: 'Convert PDF to HTML with formatting preserved',
-    icon: <Code size={20} />,
-    direction: 'from-pdf',
-    accept: { 'application/pdf': ['.pdf'] },
-    acceptLabel: 'PDF',
-  },
   'pdf-to-csv': {
     title: 'PDF to CSV',
     description: 'Extract tables from PDF into CSV format',
@@ -117,14 +135,6 @@ const conversionConfig: Record<string, {
     accept: { 'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'] },
     acceptLabel: 'PPTX',
   },
-  'html-to-pdf': {
-    title: 'HTML to PDF',
-    description: 'Convert HTML file to PDF document',
-    icon: <FileUp size={20} />,
-    direction: 'to-pdf',
-    accept: { 'text/html': ['.html', '.htm'] },
-    acceptLabel: 'HTML',
-  },
   'text-to-pdf': {
     title: 'Text to PDF',
     description: 'Convert plain text file (.txt) to PDF',
@@ -147,14 +157,6 @@ const conversionConfig: Record<string, {
     title: 'Word to Image',
     description: 'Convert Word document pages to images (PNG or JPEG)',
     icon: <ImageDown size={20} />,
-    direction: 'from-word',
-    accept: { 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'] },
-    acceptLabel: 'DOCX',
-  },
-  'word-to-html': {
-    title: 'Word to HTML',
-    description: 'Convert Word document to HTML with formatting',
-    icon: <Code size={20} />,
     direction: 'from-word',
     accept: { 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'] },
     acceptLabel: 'DOCX',
@@ -194,7 +196,7 @@ export default function ConversionTool() {
   const [document, setDocument] = useState<DocumentInfo | null>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
+  const [preview, setPreview] = useState<GenericPreview | null>(null);
 
   // Image-specific options
   const [imageFormat, setImageFormat] = useState('png');
@@ -208,40 +210,39 @@ export default function ConversionTool() {
   const [maxWidth, setMaxWidth] = useState('');
   const [maxHeight, setMaxHeight] = useState('');
 
+  const endpoint = convType ? endpointFor[convType as ConvType] : null;
+
   // For to-pdf and from-word conversions (direct file upload)
   const onDropFile = useCallback(async (acceptedFiles: File[]) => {
-    if (!config || acceptedFiles.length === 0) return;
+    if (!config || !endpoint || acceptedFiles.length === 0) return;
     setProcessing(true);
     setError(null);
     try {
-      switch (convType) {
-        // To PDF
-        case 'word-to-pdf': await wordToPdf(acceptedFiles[0]); break;
-        case 'excel-to-pdf': await excelToPdf(acceptedFiles[0]); break;
-        case 'image-to-pdf': await imageToPdf(acceptedFiles); break;
-        case 'ppt-to-pdf': await pptToPdf(acceptedFiles[0]); break;
-        case 'html-to-pdf': await htmlToPdf(acceptedFiles[0]); break;
-        case 'text-to-pdf': await textToPdf(acceptedFiles[0]); break;
-        case 'csv-to-pdf': await csvToPdf(acceptedFiles[0]); break;
-        // Word conversions
-        case 'word-to-image': await wordToImage(acceptedFiles[0], { format: imageFormat, dpi: imageDpi }); break;
-        case 'word-to-html': await wordToHtml(acceptedFiles[0]); break;
-        case 'word-to-text': await wordToText(acceptedFiles[0]); break;
-        // Image tools
-        case 'image-format-convert': await imageFormatConvert(acceptedFiles[0], targetImageFormat); break;
-        case 'image-compress': await imageCompress(acceptedFiles[0], {
-          quality: compressQuality,
-          maxWidth: maxWidth ? parseInt(maxWidth) : undefined,
-          maxHeight: maxHeight ? parseInt(maxHeight) : undefined,
-        }); break;
+      const fd = new FormData();
+      // Multi-file for image-to-pdf, single file everywhere else
+      if (convType === 'image-to-pdf') {
+        acceptedFiles.forEach((f) => fd.append('files', f));
+      } else {
+        fd.append('file', acceptedFiles[0]);
       }
-      setDone(true);
+      if (convType === 'word-to-image') {
+        fd.append('format', imageFormat);
+        fd.append('dpi', String(imageDpi));
+      } else if (convType === 'image-format-convert') {
+        fd.append('format', targetImageFormat);
+      } else if (convType === 'image-compress') {
+        fd.append('quality', String(compressQuality));
+        if (maxWidth)  fd.append('max_width',  maxWidth);
+        if (maxHeight) fd.append('max_height', maxHeight);
+      }
+      const result = await requestPreviewMultipart(endpoint, fd);
+      setPreview(result);
     } catch {
       setError('Conversion failed. Please try again.');
     } finally {
       setProcessing(false);
     }
-  }, [config, convType, imageFormat, imageDpi, targetImageFormat, compressQuality, maxWidth, maxHeight]);
+  }, [config, endpoint, convType, imageFormat, imageDpi, targetImageFormat, compressQuality, maxWidth, maxHeight]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: onDropFile,
@@ -257,25 +258,35 @@ export default function ConversionTool() {
   }, []);
 
   const handleConvert = async () => {
-    if (!document) return;
+    if (!document || !endpoint) return;
     setProcessing(true);
     setError(null);
     try {
-      switch (convType) {
-        case 'pdf-to-word': await pdfToWord(document.id, document.original_filename); break;
-        case 'pdf-to-excel': await pdfToExcel(document.id, document.original_filename); break;
-        case 'pdf-to-image': await pdfToImage(document.id, { format: imageFormat, dpi: imageDpi }); break;
-        case 'pdf-to-ppt': await pdfToPpt(document.id, document.original_filename); break;
-        case 'pdf-to-text': await pdfToText(document.id, document.original_filename); break;
-        case 'pdf-to-html': await pdfToHtml(document.id, document.original_filename); break;
-        case 'pdf-to-csv': await pdfToCsv(document.id, document.original_filename); break;
+      const body: Record<string, unknown> = { document_id: document.id };
+      if (convType === 'pdf-to-image') {
+        body.format = imageFormat;
+        body.dpi = imageDpi;
       }
-      setDone(true);
+      const result = await requestPreview(endpoint, body);
+      setPreview(result);
     } catch {
       setError('Conversion failed. Please try again.');
     } finally {
       setProcessing(false);
     }
+  };
+
+  const handleDownload = async () => {
+    if (!preview) return;
+    await downloadByToken(preview.download_url, preview.filename);
+  };
+
+  const closePreview = () => setPreview(null);
+
+  const resetAll = () => {
+    setPreview(null);
+    setDocument(null);
+    setError(null);
   };
 
   if (!config) {
@@ -286,21 +297,15 @@ export default function ConversionTool() {
 
   return (
     <ToolLayout title={config.title} description={config.description} icon={config.icon}>
-      {done ? (
-        <div className="text-center py-12">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-green-600 text-2xl">&#10003;</span>
-          </div>
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">Conversion Complete!</h2>
-          <p className="text-gray-600 mb-6">Your file has been downloaded.</p>
-          <button
-            onClick={() => { setDone(false); setDocument(null); }}
-            className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 cursor-pointer"
-          >
-            Convert Another File
-          </button>
-        </div>
-      ) : showDirectUpload ? (
+      <PreviewModal
+        open={!!preview}
+        onClose={closePreview}
+        onBackToOptions={resetAll}
+        onDownload={handleDownload}
+        data={preview}
+        title={`Preview: ${config.title}`}
+      />
+      {showDirectUpload ? (
         /* Direct file upload conversions */
         <div className="space-y-6">
           {/* Options before upload for specific tools */}
@@ -420,7 +425,7 @@ export default function ConversionTool() {
             {processing ? (
               <>
                 <Loader2 size={40} className="mx-auto text-indigo-500 animate-spin mb-4" />
-                <p className="text-lg text-gray-700">Converting...</p>
+                <p className="text-lg text-gray-700">Generating preview…</p>
               </>
             ) : (
               <>
@@ -499,12 +504,12 @@ export default function ConversionTool() {
               <button
                 onClick={handleConvert}
                 disabled={processing}
-                className="w-full py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                className="w-full py-3 bg-gradient-to-r from-brand-600 to-purple-600 text-white rounded-xl font-semibold hover:shadow-glow hover:-translate-y-0.5 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 transition-all"
               >
                 {processing ? (
-                  <><Loader2 size={18} className="animate-spin" /> Converting...</>
+                  <><Loader2 size={18} className="animate-spin" /> Generating preview…</>
                 ) : (
-                  <>{config.icon} Convert</>
+                  <><Eye size={18} /> Preview before download</>
                 )}
               </button>
             </>

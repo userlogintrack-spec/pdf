@@ -1,9 +1,11 @@
 import { useState, useCallback } from 'react';
-import { Scissors, Loader2 } from 'lucide-react';
-import { uploadDocument, getThumbnailUrl } from '../../api/documents';
-import { splitPDF } from '../../api/tools';
+import { Scissors, Loader2, Eye } from 'lucide-react';
+import { getThumbnailUrl } from '../../api/documents';
+import { requestPreview, downloadByToken } from '../../api/conversions';
+import type { GenericPreview } from '../../api/conversions';
 import FileUpload from '../common/FileUpload';
 import ToolLayout from './ToolLayout';
+import PreviewModal from '../common/PreviewModal';
 import type { DocumentInfo } from '../../types/api';
 
 export default function SplitTool() {
@@ -11,6 +13,7 @@ export default function SplitTool() {
   const [ranges, setRanges] = useState('');
   const [splitting, setSplitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<GenericPreview | null>(null);
 
   const handleUpload = useCallback(async (docId: string) => {
     const { getDocument } = await import('../../api/documents');
@@ -25,12 +28,21 @@ export default function SplitTool() {
     setError(null);
     try {
       const rangeList = ranges.split(',').map((r) => r.trim()).filter(Boolean);
-      await splitPDF(document.id, rangeList);
+      const result = await requestPreview('/tools/split/', {
+        document_id: document.id,
+        ranges: rangeList,
+      });
+      setPreview(result);
     } catch {
       setError('Split failed. Check your page ranges.');
     } finally {
       setSplitting(false);
     }
+  };
+
+  const handleDownload = async () => {
+    if (!preview) return;
+    await downloadByToken(preview.download_url, preview.filename);
   };
 
   return (
@@ -39,6 +51,15 @@ export default function SplitTool() {
       description="Split a PDF into multiple files by page ranges."
       icon={<Scissors size={20} />}
     >
+      <PreviewModal
+        open={!!preview}
+        onClose={() => setPreview(null)}
+        onBackToOptions={() => setPreview(null)}
+        onDownload={handleDownload}
+        data={preview}
+        title="Preview split PDF"
+      />
+
       {!document ? (
         <FileUpload onUploadComplete={handleUpload} />
       ) : (
@@ -84,12 +105,12 @@ export default function SplitTool() {
           <button
             onClick={handleSplit}
             disabled={splitting || !ranges.trim()}
-            className="w-full py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+            className="w-full py-3 bg-gradient-to-r from-brand-600 to-purple-600 text-white rounded-xl font-semibold hover:shadow-glow hover:-translate-y-0.5 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 transition-all"
           >
             {splitting ? (
-              <><Loader2 size={18} className="animate-spin" /> Splitting...</>
+              <><Loader2 size={18} className="animate-spin" /> Generating preview…</>
             ) : (
-              <><Scissors size={18} /> Split PDF</>
+              <><Eye size={18} /> <Scissors size={18} /> Preview split PDF</>
             )}
           </button>
         </>

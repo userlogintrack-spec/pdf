@@ -65,22 +65,22 @@ def convert_html_string_to_pdf(html_content):
         # Determine formatting based on tag
         if tag in ("h1",):
             font_size = 24
-            font_name = "helvB"
+            font_name = "hebo"
         elif tag in ("h2",):
             font_size = 18
-            font_name = "helvB"
+            font_name = "hebo"
         elif tag in ("h3",):
             font_size = 14
-            font_name = "helvB"
+            font_name = "hebo"
         elif tag in ("h4", "h5", "h6"):
             font_size = 12
-            font_name = "helvB"
+            font_name = "hebo"
         elif tag in ("strong", "b"):
             font_size = 12
-            font_name = "helvB"
+            font_name = "hebo"
         elif tag in ("em", "i"):
             font_size = 12
-            font_name = "helvI"
+            font_name = "heit"
         else:
             font_size = 12
             font_name = "helv"

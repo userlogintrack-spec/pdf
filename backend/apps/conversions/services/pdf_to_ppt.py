@@ -3,7 +3,69 @@ import fitz
 from pptx import Presentation
 from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR, MSO_AUTO_SIZE
+from pptx.oxml.ns import qn
+from lxml import etree
+
+
+_BULLET_CHARS = set("•●◦▪▫■□◆◇‣⁃※*⋅∙")
+
+
+def _strip_bullet_prefix(text):
+    """If a line starts with a bullet glyph, return (bullet_char, rest)."""
+    stripped = text.lstrip()
+    if not stripped:
+        return None, text
+    leading_ws = text[:len(text) - len(stripped)]
+    first = stripped[0]
+    if first in _BULLET_CHARS:
+        # Also strip the spaces after the bullet
+        after = stripped[1:].lstrip()
+        return first, leading_ws + after
+    return None, text
+
+
+def _rects_for_links(page):
+    """Return list of (rect, uri) for URI link annotations on the page."""
+    links = []
+    for lk in page.get_links():
+        if lk.get("kind") == fitz.LINK_URI and lk.get("uri"):
+            links.append((lk["from"], lk["uri"]))
+    return links
+
+
+def _find_link_for_span(span_bbox, links):
+    """Return URI if span's bbox is inside any link annotation's rect."""
+    sx0, sy0, sx1, sy1 = span_bbox
+    sxc = (sx0 + sx1) / 2
+    syc = (sy0 + sy1) / 2
+    for rect, uri in links:
+        if rect.x0 <= sxc <= rect.x1 and rect.y0 <= syc <= rect.y1:
+            return uri
+    return None
+
+
+def _set_run_hyperlink(run, uri):
+    """Attach a clickable hyperlink to a text run."""
+    try:
+        run.hyperlink.address = uri
+    except Exception:
+        pass
+
+
+def _set_run_invisible(run):
+    """
+    Set a text run to be fully transparent (alpha=0) while keeping it
+    selectable, searchable, and editable. This is the same technique used
+    by Adobe Acrobat / iLovePDF for "hidden text under image" layers.
+    """
+    rPr = run._r.get_or_add_rPr()
+    # Remove any existing solidFill
+    for existing in rPr.findall(qn('a:solidFill')):
+        rPr.remove(existing)
+    solid_fill = etree.SubElement(rPr, qn('a:solidFill'))
+    srgb = etree.SubElement(solid_fill, qn('a:srgbClr'), val='000000')
+    etree.SubElement(srgb, qn('a:alpha'), val='0')
 
 
 def convert_pdf_to_ppt(file_path, mode='hybrid', dpi=250, pages=None):
@@ -100,18 +162,22 @@ def _build_image_slide(slide, page, mat, slide_w, slide_h):
 
 def _build_hybrid_slide(slide, page, pdf_doc, mat, slide_w, slide_h, pw, ph):
     """
-    Hybrid mode: pixel-perfect image background + editable text overlay.
-    Best of both worlds - looks exactly like the PDF but text is selectable/editable.
+    Hybrid mode: pixel-perfect image + editable text hidden BEHIND it.
+    User visually sees only the clean image (no ghost text), but the text
+    is present in the slide — searchable (Ctrl+F), copyable, and editable
+    after removing the image. This is how Adobe Acrobat "searchable PDF"
+    layers work.
     """
-    # 1. Full-page image as background (pixel-perfect rendering)
+    scale_x = slide_w / pw
+    scale_y = slide_h / ph
+
+    # 1. Add text FIRST so it sits BEHIND the image (z-order = insertion order)
+    _add_text(slide, page, scale_x, scale_y, transparent=True)
+
+    # 2. Full-page image ON TOP — covers the text visually
     pix = page.get_pixmap(matrix=mat, alpha=False)
     img_stream = io.BytesIO(pix.tobytes("png"))
     slide.shapes.add_picture(img_stream, 0, 0, slide_w, slide_h)
-
-    # 2. Editable text overlay with transparent background
-    scale_x = slide_w / pw
-    scale_y = slide_h / ph
-    _add_text(slide, page, scale_x, scale_y, transparent=True)
 
 
 # ─── Mode: EDITABLE ───────────────────────────────────────────────
@@ -136,18 +202,34 @@ def _build_editable_slide(slide, page, pdf_doc, slide_w, slide_h, pw, ph):
     # 4. Images at correct positions
     _add_images(slide, page, pdf_doc, scale_x, scale_y)
 
-    # 5. Editable text (on top of everything)
-    _add_text(slide, page, scale_x, scale_y, transparent=True)
+    # 5. Editable text (on top of everything) — visible, real colors
+    _add_text(slide, page, scale_x, scale_y, transparent=False)
 
 
 # ─── Shape extraction ──────────────────────────────────────────────
 
 def _add_rects(slide, page, scale_x, scale_y):
     """Add colored rectangles and filled shapes from PDF drawings."""
+    page_w = page.rect.width
+    page_h = page.rect.height
+
+    seen = set()
     for path in page.get_drawings():
         fill = path.get("fill")
         rect = path.get("rect")
         if rect is None:
+            continue
+
+        # Dedup identical shapes (some PDFs double-draw)
+        key = (round(rect.x0, 1), round(rect.y0, 1),
+               round(rect.x1, 1), round(rect.y1, 1),
+               tuple(round(c, 2) for c in (fill or path.get("color") or ())))
+        if key in seen:
+            continue
+        seen.add(key)
+
+        # Skip near-page-size backgrounds (they're just white canvas)
+        if rect.width > page_w * 0.92 and rect.height > page_h * 0.92:
             continue
 
         # Filled shapes
@@ -204,7 +286,8 @@ def _add_rects(slide, page, scale_x, scale_y):
 
 
 def _add_lines(slide, page, scale_x, scale_y):
-    """Add lines and connectors from PDF drawings."""
+    """Add lines and connectors from PDF drawings (borders, separators, rules)."""
+    seen = set()
     for path in page.get_drawings():
         items = path.get("items", [])
         color = path.get("color")
@@ -214,38 +297,43 @@ def _add_lines(slide, page, scale_x, scale_y):
         if path.get("fill") is not None:
             continue
 
-        # Only process simple line segments (2-point paths)
-        lines = [item for item in items if item[0] == "l"]
-        if len(lines) != 1 or len(items) > 2:
-            continue
+        # Emit every line segment in the path (not just single-segment paths)
+        # so polyline borders and frame edges are preserved too.
+        for item in items:
+            if item[0] != "l":
+                continue
+            p1, p2 = item[1], item[2]
 
-        line_item = lines[0]
-        p1 = line_item[1]  # start point
-        p2 = line_item[2]  # end point
+            # Skip degenerate lines shorter than 3pt in PDF
+            dx_pdf = p2.x - p1.x
+            dy_pdf = p2.y - p1.y
+            if (dx_pdf * dx_pdf + dy_pdf * dy_pdf) < 9:
+                continue
 
-        x1 = int(p1.x * scale_x)
-        y1 = int(p1.y * scale_y)
-        x2 = int(p2.x * scale_x)
-        y2 = int(p2.y * scale_y)
+            x1 = int(p1.x * scale_x)
+            y1 = int(p1.y * scale_y)
+            x2 = int(p2.x * scale_x)
+            y2 = int(p2.y * scale_y)
 
-        # Skip tiny lines
-        length_sq = (x2 - x1) ** 2 + (y2 - y1) ** 2
-        if length_sq < Emu(50000) ** 2:
-            continue
+            # Deduplicate lines drawn multiple times in the source PDF
+            key = (x1, y1, x2, y2)
+            if key in seen:
+                continue
+            seen.add(key)
 
-        try:
-            connector = slide.shapes.add_connector(
-                1, x1, y1, x2 - x1, y2 - y1  # MSO_CONNECTOR_TYPE.STRAIGHT
-            )
-            connector.line.color.rgb = RGBColor(
-                min(255, int(color[0] * 255)),
-                min(255, int(color[1] * 255)),
-                min(255, int(color[2] * 255)),
-            )
-            lw = path.get("width", 1)
-            connector.line.width = Pt(max(0.25, lw))
-        except Exception:
-            pass
+            try:
+                connector = slide.shapes.add_connector(
+                    1, x1, y1, x2 - x1, y2 - y1  # MSO_CONNECTOR_TYPE.STRAIGHT
+                )
+                connector.line.color.rgb = RGBColor(
+                    min(255, int(color[0] * 255)),
+                    min(255, int(color[1] * 255)),
+                    min(255, int(color[2] * 255)),
+                )
+                lw = path.get("width", 1)
+                connector.line.width = Pt(max(0.25, lw))
+            except Exception:
+                pass
 
 
 # ─── Image extraction ──────────────────────────────────────────────
@@ -377,114 +465,116 @@ def _detect_alignment(spans, block_bbox):
 
 def _add_text(slide, page, scale_x, scale_y, transparent=True):
     """
-    Add editable text boxes to the slide.
+    Line-precise text placement: one textbox per visible line.
 
-    Args:
-        transparent: If True, text boxes have no fill (for hybrid mode overlay).
-                     If False, text boxes are opaque (for standalone editable mode).
+    This avoids block-level stacking problems where multiple columns of text
+    on the same page (common in tickets, receipts, multi-column layouts) get
+    lumped together into a single textbox and end up overlapping.
     """
     text_dict = page.get_text("dict", flags=fitz.TEXT_PRESERVE_WHITESPACE)
+    links = _rects_for_links(page)
 
     for block in text_dict.get("blocks", []):
         if block.get("type") != 0:
             continue
 
-        lines = block.get("lines", [])
-        if not lines:
-            continue
+        for line in block.get("lines", []):
+            spans = [s for s in line.get("spans", []) if s.get("text", "")]
+            if not spans:
+                continue
+            if not any(s.get("text", "").strip() for s in spans):
+                continue
 
-        # Collect all spans to check if block has real text
-        all_spans = []
-        for line in lines:
-            for span in line.get("spans", []):
-                if span.get("text", "").strip():
-                    all_spans.append(span)
-        if not all_spans:
-            continue
+            line_bbox = line.get("bbox", [0, 0, 0, 0])
+            x0, y0, x1, y1 = line_bbox
+            pdf_w = x1 - x0
+            pdf_h = y1 - y0
+            if pdf_w < 0.5 or pdf_h < 0.5:
+                continue
 
-        bbox = block.get("bbox", [0, 0, 0, 0])
-        left = int(bbox[0] * scale_x)
-        top = int(bbox[1] * scale_y)
-        width = int((bbox[2] - bbox[0]) * scale_x)
-        height = int((bbox[3] - bbox[1]) * scale_y)
+            # Tight fit: horizontal padding to prevent clipping, a tiny
+            # vertical expansion so the top of ascenders isn't clipped.
+            left = int(x0 * scale_x)
+            top = int((y0 - 0.5) * scale_y)
+            width = int(pdf_w * scale_x * 1.08 + Emu(50000))
+            height = int((pdf_h + 1.0) * scale_y * 1.25)
 
-        # Ensure minimum dimensions
-        width = max(width, Emu(200000))
-        height = max(height, Emu(80000))
+            if top < 0:
+                top = 0
 
-        # Add slight padding to prevent text clipping
-        width = int(width * 1.02)
+            txBox = slide.shapes.add_textbox(left, top, width, height)
+            tf = txBox.text_frame
+            tf.word_wrap = False  # per-line textbox; don't wrap
+            tf.margin_left = Emu(0)
+            tf.margin_right = Emu(0)
+            tf.margin_top = Emu(0)
+            tf.margin_bottom = Emu(0)
+            tf.auto_size = MSO_AUTO_SIZE.NONE  # keep fixed size — no auto-growth
+            tf.vertical_anchor = MSO_ANCHOR.TOP
 
-        txBox = slide.shapes.add_textbox(left, top, width, height)
-        tf = txBox.text_frame
-        tf.word_wrap = True
-        tf.margin_left = Emu(0)
-        tf.margin_right = Emu(0)
-        tf.margin_top = Emu(0)
-        tf.margin_bottom = Emu(0)
+            # Transparent textbox fill & no border
+            txBox.fill.background()
+            txBox.line.fill.background()
 
-        # Transparent fill so the background (image or shapes) shows through
-        txBox.fill.background()
-        txBox.line.fill.background()
+            alignment = _detect_alignment(spans, line_bbox)
 
-        # Detect alignment from first line spans
-        first_line_spans = lines[0].get("spans", []) if lines else []
-        alignment = _detect_alignment(first_line_spans, bbox)
-
-        first_para = True
-        for line in lines:
-            if first_para:
-                p = tf.paragraphs[0]
-                first_para = False
-            else:
-                p = tf.add_paragraph()
-
+            p = tf.paragraphs[0]
             p.space_before = Pt(0)
             p.space_after = Pt(0)
+            p.line_spacing = 1.0
             p.alignment = alignment
 
-            # Calculate line spacing from font size
-            line_spans = line.get("spans", [])
-            if line_spans:
-                max_size = max(s.get("size", 12) for s in line_spans)
-                if max_size > 20:
-                    p.line_spacing = 1.0
-                elif max_size > 14:
-                    p.line_spacing = 1.05
-                else:
-                    p.line_spacing = 1.1
-
-            for span in line_spans:
+            for span_idx, span in enumerate(spans):
                 text = span.get("text", "")
+                if not text:
+                    continue
+
+                # Detect & convert leading bullet glyph on the first span
+                # of a line — PowerPoint renders bullets via paragraph
+                # formatting, but this keeps native bullet chars readable.
+                if span_idx == 0:
+                    bullet, text = _strip_bullet_prefix(text)
+                    if bullet:
+                        prefix_run = p.add_run()
+                        prefix_run.text = f"{bullet}  "
+                        size = span.get("size", 12)
+                        prefix_run.font.size = Pt(max(1, size))
+                        prefix_run.font.name = "Arial"
+                        if transparent:
+                            _set_run_invisible(prefix_run)
+
                 if not text:
                     continue
 
                 run = p.add_run()
                 run.text = text
 
-                # Font size
                 size = span.get("size", 12)
-                run.font.size = Pt(max(1, size))
 
-                # Font name (cleaned and mapped)
+                # Superscript / subscript detection from flag bits
+                flags = span.get("flags", 0)
+                is_super = bool(flags & 1)         # bit 0
+                is_sub   = bool(flags & 8) and not is_super   # uncommon — some PDFs
+
+                if is_super or is_sub:
+                    # PowerPoint represents super/sub via baseline offset
+                    run.font.size = Pt(max(1, size * 0.7))
+                else:
+                    run.font.size = Pt(max(1, size))
+
                 font_name = span.get("font", "")
                 run.font.name = _clean_font_name(font_name)
 
-                # Bold / Italic detection
-                flags = span.get("flags", 0)
                 font_lower = font_name.lower()
                 if "bold" in font_lower or "black" in font_lower or (flags & 16):
                     run.font.bold = True
-                if ("italic" in font_lower or "oblique" in font_lower or (flags & 2)):
+                if "italic" in font_lower or "oblique" in font_lower or (flags & 2):
                     run.font.italic = True
-
-                # Underline
                 if flags & 4:
                     run.font.underline = True
 
-                # Text color
                 color_int = span.get("color", 0)
-                if color_int and color_int != 0:
+                if color_int:
                     r_val = (color_int >> 16) & 0xFF
                     g_val = (color_int >> 8) & 0xFF
                     b_val = color_int & 0xFF
@@ -492,10 +582,25 @@ def _add_text(slide, page, scale_x, scale_y, transparent=True):
                 else:
                     run.font.color.rgb = RGBColor(0, 0, 0)
 
-                # In hybrid mode, make text color transparent so it doesn't
-                # visually duplicate with the background image, but remains
-                # selectable/editable. User can toggle visibility in PowerPoint.
+                # Hyperlink: if this span sits inside a URI link annotation,
+                # make it clickable in PowerPoint.
+                span_bbox = span.get("bbox")
+                if span_bbox and links:
+                    uri = _find_link_for_span(span_bbox, links)
+                    if uri:
+                        _set_run_hyperlink(run, uri)
+
+                # Apply super/sub baseline offset via OOXML (python-pptx
+                # doesn't expose this property directly).
+                if is_super or is_sub:
+                    try:
+                        rPr = run._r.get_or_add_rPr()
+                        rPr.set("baseline", "30000" if is_super else "-25000")
+                    except Exception:
+                        pass
+
+                # In hybrid mode: make run fully transparent (alpha=0). Text
+                # stays selectable / searchable. The image on top provides
+                # the visual — this matches Adobe Acrobat's OCR layer pattern.
                 if transparent:
-                    # Keep full color - users expect to see the text.
-                    # The image background + text overlay gives best results.
-                    pass
+                    _set_run_invisible(run)

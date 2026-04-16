@@ -1,9 +1,11 @@
 import { useState, useCallback } from 'react';
-import { FileOutput, Loader2 } from 'lucide-react';
+import { FileOutput, Loader2, Eye } from 'lucide-react';
 import { getThumbnailUrl } from '../../api/documents';
-import { extractPages } from '../../api/tools';
+import { requestPreview, downloadByToken } from '../../api/conversions';
+import type { GenericPreview } from '../../api/conversions';
 import FileUpload from '../common/FileUpload';
 import ToolLayout from './ToolLayout';
+import PreviewModal from '../common/PreviewModal';
 import type { DocumentInfo } from '../../types/api';
 
 export default function ExtractTool() {
@@ -11,6 +13,7 @@ export default function ExtractTool() {
   const [selectedPages, setSelectedPages] = useState<Set<number>>(new Set());
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<GenericPreview | null>(null);
 
   const handleUpload = useCallback(async (docId: string) => {
     const { getDocument } = await import('../../api/documents');
@@ -37,12 +40,21 @@ export default function ExtractTool() {
     setProcessing(true);
     setError(null);
     try {
-      await extractPages(document.id, Array.from(selectedPages));
+      const result = await requestPreview('/tools/extract/', {
+        document_id: document.id,
+        pages: Array.from(selectedPages),
+      });
+      setPreview(result);
     } catch {
       setError('Extraction failed. Please try again.');
     } finally {
       setProcessing(false);
     }
+  };
+
+  const handleDownload = async () => {
+    if (!preview) return;
+    await downloadByToken(preview.download_url, preview.filename);
   };
 
   return (
@@ -51,6 +63,15 @@ export default function ExtractTool() {
       description="Select pages to extract into a new PDF."
       icon={<FileOutput size={20} />}
     >
+      <PreviewModal
+        open={!!preview}
+        onClose={() => setPreview(null)}
+        onBackToOptions={() => setPreview(null)}
+        onDownload={handleDownload}
+        data={preview}
+        title="Preview extracted PDF"
+      />
+
       {!document ? (
         <FileUpload onUploadComplete={handleUpload} />
       ) : (
@@ -104,12 +125,12 @@ export default function ExtractTool() {
           <button
             onClick={handleExtract}
             disabled={processing || selectedPages.size === 0}
-            className="w-full py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+            className="w-full py-3 bg-gradient-to-r from-brand-600 to-purple-600 text-white rounded-xl font-semibold hover:shadow-glow hover:-translate-y-0.5 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 transition-all"
           >
             {processing ? (
-              <><Loader2 size={18} className="animate-spin" /> Extracting...</>
+              <><Loader2 size={18} className="animate-spin" /> Generating preview…</>
             ) : (
-              <><FileOutput size={18} /> Extract {selectedPages.size} Pages</>
+              <><Eye size={18} /> <FileOutput size={18} /> Preview {selectedPages.size} extracted pages</>
             )}
           </button>
         </>

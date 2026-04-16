@@ -10,6 +10,14 @@ build/
 db.sqlite3
 backend/media/
 backend/staticfiles/
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/*.pdf
+backend/*.docx
+backend/*.xlsx
+backend/*.pptx
+backend/*.png
+backend/*.txt
 
 # Node
 node_modules/

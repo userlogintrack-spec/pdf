@@ -1,9 +1,11 @@
 import { useState, useCallback } from 'react';
-import { ArrowDownUp, Loader2, GripVertical } from 'lucide-react';
+import { ArrowDownUp, Loader2, GripVertical, Eye } from 'lucide-react';
 import { getThumbnailUrl } from '../../api/documents';
-import { reorderPDF } from '../../api/tools';
+import { requestPreview, downloadByToken } from '../../api/conversions';
+import type { GenericPreview } from '../../api/conversions';
 import FileUpload from '../common/FileUpload';
 import ToolLayout from './ToolLayout';
+import PreviewModal from '../common/PreviewModal';
 import type { DocumentInfo } from '../../types/api';
 
 export default function ReorderTool() {
@@ -12,6 +14,7 @@ export default function ReorderTool() {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [preview, setPreview] = useState<GenericPreview | null>(null);
 
   const handleUpload = useCallback(async (docId: string) => {
     const { getDocument } = await import('../../api/documents');
@@ -41,12 +44,21 @@ export default function ReorderTool() {
     setProcessing(true);
     setError(null);
     try {
-      await reorderPDF(document.id, pageOrder);
+      const result = await requestPreview('/tools/reorder/', {
+        document_id: document.id,
+        new_order: pageOrder,
+      });
+      setPreview(result);
     } catch {
       setError('Reorder failed. Please try again.');
     } finally {
       setProcessing(false);
     }
+  };
+
+  const handleDownload = async () => {
+    if (!preview) return;
+    await downloadByToken(preview.download_url, preview.filename);
   };
 
   const isChanged = document ? !pageOrder.every((p, i) => p === i) : false;
@@ -57,6 +69,15 @@ export default function ReorderTool() {
       description="Drag and drop to rearrange pages in your PDF."
       icon={<ArrowDownUp size={20} />}
     >
+      <PreviewModal
+        open={!!preview}
+        onClose={() => setPreview(null)}
+        onBackToOptions={() => setPreview(null)}
+        onDownload={handleDownload}
+        data={preview}
+        title="Preview reordered PDF"
+      />
+
       {!document ? (
         <FileUpload onUploadComplete={handleUpload} />
       ) : (
@@ -111,12 +132,12 @@ export default function ReorderTool() {
             <button
               onClick={handleApply}
               disabled={processing || !isChanged}
-              className="flex-1 py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+              className="flex-1 py-3 bg-gradient-to-r from-brand-600 to-purple-600 text-white rounded-xl font-semibold hover:shadow-glow hover:-translate-y-0.5 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 transition-all"
             >
               {processing ? (
-                <><Loader2 size={18} className="animate-spin" /> Reordering...</>
+                <><Loader2 size={18} className="animate-spin" /> Generating preview…</>
               ) : (
-                <><ArrowDownUp size={18} /> Apply New Order</>
+                <><Eye size={18} /> <ArrowDownUp size={18} /> Preview reordered PDF</>
               )}
             </button>
           </div>
