@@ -23,14 +23,12 @@ const FONTS = ['Helvetica', 'Arial', 'Times New Roman', 'Courier New', 'Georgia'
 const FONT_SIZES = [8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64, 72];
 
 export default function PropertyPanel({ canvas }: PropertyPanelProps) {
-  const [selected, setSelected] = useState<fabric.FabricObject | null>(null);
   const [props, setProps] = useState<ObjectProps | null>(null);
   const [collapsed, setCollapsed] = useState(true);
   const { activeTool } = useEditorStore();
 
   const updateProps = useCallback((obj: fabric.FabricObject | null) => {
-    if (!obj) { setSelected(null); setProps(null); return; }
-    setSelected(obj);
+    if (!obj) { setProps(null); return; }
     setCollapsed(false); // Auto-open when object selected
     setProps({
       type: obj.type ?? 'unknown',
@@ -76,7 +74,7 @@ export default function PropertyPanel({ canvas }: PropertyPanelProps) {
     canvas.remove(obj);
     canvas.discardActiveObject();
     canvas.renderAll();
-    setSelected(null); setProps(null);
+    setProps(null);
   };
 
   if (activeTool === 'select' && !props) return null;
