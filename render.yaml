@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: pdfcraft-backend
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: "pip install -r requirements/base.txt && python manage.py collectstatic --noinput && python manage.py migrate"
+    startCommand: "gunicorn pdfcraft.wsgi --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
+    healthCheckPath: /
+    envVars:
+      - key: DJANGO_SETTINGS_MODULE
+        value: pdfcraft.settings.production
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: ALLOWED_HOSTS
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false

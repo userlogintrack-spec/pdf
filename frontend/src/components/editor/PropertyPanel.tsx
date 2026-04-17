@@ -60,16 +60,20 @@ export default function PropertyPanel({ canvas }: PropertyPanelProps) {
   }, [canvas, updateProps]);
 
   const applyProp = (key: string, value: unknown) => {
-    if (!selected || !canvas) return;
-    (selected as unknown as Record<string, unknown>)[key] = value;
-    selected.setCoords();
+    if (!canvas) return;
+    const obj = canvas.getActiveObject();
+    if (!obj) return;
+    (obj as unknown as Record<string, unknown>)[key] = value;
+    obj.setCoords();
     canvas.renderAll();
     setProps((prev) => prev ? { ...prev, [key]: value } : null);
   };
 
   const handleDelete = () => {
-    if (!selected || !canvas) return;
-    canvas.remove(selected);
+    if (!canvas) return;
+    const obj = canvas.getActiveObject();
+    if (!obj) return;
+    canvas.remove(obj);
     canvas.discardActiveObject();
     canvas.renderAll();
     setSelected(null); setProps(null);
