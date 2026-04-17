@@ -1,4 +1,4 @@
-import api from './client';
+import api, { API_BASE } from './client';
 import type { DocumentInfo, DocumentListItem } from '../types/api';
 
 export async function uploadDocument(file: File): Promise<DocumentInfo> {
@@ -26,9 +26,9 @@ export async function deleteDocument(id: string): Promise<void> {
 
 export function getPageImageUrl(docId: string, pageNum: number, width?: number): string {
   const params = width ? `?width=${width}` : '';
-  return `/api/v1/documents/${docId}/pages/${pageNum}/image/${params}`;
+  return `${API_BASE}/api/v1/documents/${docId}/pages/${pageNum}/image/${params}`;
 }
 
 export function getThumbnailUrl(docId: string, pageNum: number): string {
-  return `/api/v1/documents/${docId}/thumbnail/${pageNum}/`;
+  return `${API_BASE}/api/v1/documents/${docId}/thumbnail/${pageNum}/`;
 }
