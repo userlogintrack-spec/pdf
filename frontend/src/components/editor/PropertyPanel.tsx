@@ -61,7 +61,7 @@ export default function PropertyPanel({ canvas }: PropertyPanelProps) {
 
   const applyProp = (key: string, value: unknown) => {
     if (!selected || !canvas) return;
-    (selected as Record<string, unknown>)[key] = value;
+    (selected as unknown as Record<string, unknown>)[key] = value;
     selected.setCoords();
     canvas.renderAll();
     setProps((prev) => prev ? { ...prev, [key]: value } : null);

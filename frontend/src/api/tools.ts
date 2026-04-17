@@ -1,6 +1,6 @@
 import api from './client';
 
-async function downloadBlob(url: string, data: Record<string, unknown>, filename: string): Promise<Blob> {
+async function downloadBlob(url: string, data: Record<string, unknown>, _filename: string): Promise<Blob> {
   const response = await api.post(url, data, { responseType: 'blob' });
   return response.data;
 }

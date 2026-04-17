@@ -46,7 +46,7 @@ export default function SignaturePad({ isOpen, onClose, onSave }: SignaturePadPr
     let dataUrl = '';
 
     if (activeTab === 'draw' && fabricRef.current) {
-      dataUrl = fabricRef.current.toDataURL({ format: 'png' });
+      dataUrl = fabricRef.current.toDataURL({ format: 'png', multiplier: 1 });
     } else if (activeTab === 'type' && typedName) {
       // Render typed name to canvas
       const tempCanvas = document.createElement('canvas');

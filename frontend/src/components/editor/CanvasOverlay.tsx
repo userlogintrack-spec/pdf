@@ -1,7 +1,6 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
 import * as fabric from 'fabric';
 import { useEditorStore } from '../../store/useEditorStore';
-import type { EditOperation } from '../../types/api';
 
 interface CanvasOverlayProps {
   width: number;
@@ -14,10 +13,7 @@ export default function CanvasOverlay({ width, height }: CanvasOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricRef = useRef<fabric.Canvas | null>(null);
   const isInitialized = useRef(false);
-  const {
-    activeTool, currentPage,
-    operations, addOperation, removeOperation,
-  } = useEditorStore();
+  const { activeTool, removeOperation } = useEditorStore();
 
   // Initialize canvas once
   useEffect(() => {
@@ -98,7 +94,7 @@ export default function CanvasOverlay({ width, height }: CanvasOverlayProps) {
     const canvas = fabricRef.current;
     if (!canvas) return;
 
-    const handleMouseDown = (opt: fabric.TEvent<MouseEvent>) => {
+    const handleMouseDown = (opt: fabric.TPointerEventInfo) => {
       if (activeTool === 'select' || activeTool === 'draw' || activeTool === 'highlight') return;
       if (canvas.getActiveObject()) return; // Don't create if clicking existing object
 
@@ -209,8 +205,8 @@ export default function CanvasOverlay({ width, height }: CanvasOverlayProps) {
       });
     };
 
-    canvas.on('path:created', handlePathCreated as (e: fabric.TEvent) => void);
-    return () => { canvas.off('path:created', handlePathCreated as (e: fabric.TEvent) => void); };
+    canvas.on('path:created', handlePathCreated as never);
+    return () => { canvas.off('path:created', handlePathCreated as never); };
   }, []);
 
   // Delete key handler
@@ -228,7 +224,8 @@ export default function CanvasOverlay({ width, height }: CanvasOverlayProps) {
         const objects = canvas.getActiveObjects();
         if (objects.length > 0) {
           objects.forEach((obj) => {
-            if (obj.data?.operationId) removeOperation(obj.data.operationId);
+            const data = (obj as fabric.FabricObject & { data?: { operationId?: string } }).data;
+            if (data?.operationId) removeOperation(data.operationId);
             canvas.remove(obj);
           });
           canvas.discardActiveObject();
